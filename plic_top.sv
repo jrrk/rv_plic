@@ -13,7 +13,9 @@ module plic_top #(
   // Interrupt Sources
   input  logic [N_SOURCE-1:0] irq_sources_i,
   // Interrupt notification to targets
-  output logic [N_TARGET-1:0] eip_targets_o
+  output logic [N_TARGET-1:0] eip_targets_o,
+  output wire trig_out,
+  input wire trig_out_ack
 );
   localparam PRIOW = $clog2(MAX_PRIO+1);
 
@@ -110,6 +112,8 @@ module plic_top #(
 `ifdef XLNX_ILA_PLIC   
 xlnx_ila_plic plic_ila (
 	.clk(clk_i),
+        .trig_out(trig_out),// output wire trig_out 
+        .trig_out_ack(trig_out_ack),// input wire trig_out_ack 
 	.probe0(prio_i),
 	.probe1(prio_o),
 	.probe2(prio_we_o),
