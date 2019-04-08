@@ -6,6 +6,7 @@ module plic_top #(
 ) (
   input  logic clk_i,    // Clock
   input  logic rst_ni,  // Asynchronous reset active low
+  input wire         valid_fence_i_r_i,   
 `ifdef XLNX_ILA_PLIC   
   output wire trig_out, // ILA debugging triggers
   input wire trig_out_ack,
@@ -27,8 +28,8 @@ module plic_top #(
 
   logic [N_TARGET-1:0][PRIOW-1:0]    threshold_q;
 
-  logic [N_TARGET-1:0]               claim_re; //Target read indicator
-  logic [N_TARGET-1:0][SRCW-1:0]     claim_id;
+  logic [N_TARGET-1:0]               claim_re, claim_re_d, claim_re_q; //Target read indicator
+  logic [N_TARGET-1:0][SRCW-1:0]     claim_id, claim_id_d, claim_id_q;
   logic [N_SOURCE-1:0]               claim; //Converted from claim_re/claim_id
 
   logic [N_TARGET-1:0]               complete_we; //Target write indicator
@@ -43,6 +44,8 @@ module plic_top #(
 
   always_comb begin
     claim = '0;
+    claim_re_d = claim_re_q;
+    claim_id_d = claim_id_q;
     complete = '0;
     defer_complete = &defer_cnt_q;
     defer_cnt_d = defer_cnt_q + !defer_complete;
@@ -50,9 +53,16 @@ module plic_top #(
     for (int i = 0 ; i < N_TARGET ; i++) begin
       if (claim_re[i] && claim_id[i] != 0)
         begin
-           claim[claim_id[i]-1] = 1'b1;
+           claim_re_d[i] = 1'b1;
+           claim_id_d[i] = claim_id[i];
            defer_cnt_d = '0; // defer further interrupts for a while
         end
+      if (claim_re_q[i] && valid_fence_i_r_i)
+        begin
+           claim[claim_id[i]-1] = 1'b1;
+        end
+      if (defer_complete) // if we don't see the fence, flush the claim after a while ...
+        claim_re_d = '0;
       eip_targets_o[i] = eip_targets[i] & defer_complete; // we don't want to re-interrupt straight after a claim
       if (complete_we[i] && complete_id[i] != 0) complete[complete_id[i]-1] = 1'b1;
     end
@@ -141,8 +151,12 @@ module plic_top #(
       ie_q <= '0;
       threshold_q <= '0;
       defer_cnt_q <= '0;
+      claim_re_q <= '0;
+      claim_id_q <= '0;
     end else begin
       defer_cnt_q <= defer_cnt_d;
+      claim_re_q <= claim_re_d;
+      claim_id_q <= claim_id_d;
       // source zero is 0
       for (int i = 0; i < N_SOURCE; i++) begin
         prio_q[i] <= prio_we_o[i + 1] ? prio_o[i + 1] : prio_q[i];
@@ -185,7 +199,12 @@ xlnx_ila_plic plic_ila (
         .probe22(eip_targets_o),
         .probe23(defer_cnt_d),
         .probe24(defer_cnt_q),
-        .probe25(defer_complete)
+        .probe25(defer_complete),
+        .probe26(valid_fence_i_r_i),
+        .probe27(claim_re_d),
+        .probe28(claim_re_q),
+        .probe29(claim_id_d),
+        .probe30(claim_id_q)
 );
 `endif
    
