@@ -43,29 +43,30 @@ module plic_top #(
   logic                              defer_complete;
 
   always_comb begin
-    claim = '0;
-    claim_re_d = claim_re_q;
-    claim_id_d = claim_id_q;
-    complete = '0;
-    defer_complete = &defer_cnt_q;
-    defer_cnt_d = defer_cnt_q + !defer_complete;
-
-    for (int i = 0 ; i < N_TARGET ; i++) begin
-      if (claim_re[i] && claim_id[i] != 0)
-        begin
-           claim_re_d[i] = 1'b1;
-           claim_id_d[i] = claim_id[i];
-           defer_cnt_d = '0; // defer further interrupts for a while
-        end
-      if (claim_re_q[i] && valid_fence_i_r_i)
-        begin
-           claim[claim_id[i]-1] = 1'b1;
-        end
-      if (defer_complete) // if we don't see the fence, flush the claim after a while ...
-        claim_re_d = '0;
-      eip_targets_o[i] = eip_targets[i] & defer_complete; // we don't want to re-interrupt straight after a claim
-      if (complete_we[i] && complete_id[i] != 0) complete[complete_id[i]-1] = 1'b1;
-    end
+     claim = '0;
+     defer_complete = &defer_cnt_q;
+     if (defer_complete) // if we don't see the fence, flush the claim after a while ...
+       claim_re_d = '0;
+     else
+       claim_re_d = claim_re_q;
+     claim_id_d = claim_id_q;
+     complete = '0;
+     defer_cnt_d = defer_cnt_q + !defer_complete;
+     
+     for (int i = 0 ; i < N_TARGET ; i++) begin
+        if (claim_re[i] && claim_id[i] != 0)
+          begin
+             claim_re_d[i] = 1'b1;
+             claim_id_d[i] = claim_id[i];
+             defer_cnt_d = '0; // defer further interrupts for a while
+          end
+        if (claim_re_q[i] && valid_fence_i_r_i)
+          begin
+             claim[claim_id[i]-1] = 1'b1;
+          end
+        eip_targets_o[i] = eip_targets[i] & defer_complete; // we don't want to re-interrupt straight after a claim
+        if (complete_we[i] && complete_id[i] != 0) complete[complete_id[i]-1] = 1'b1;
+     end
   end
 
   // Gateways
