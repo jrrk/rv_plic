@@ -19,6 +19,8 @@ module plic_top #(
 );
   localparam PRIOW = $clog2(MAX_PRIO+1);
 
+  logic [N_TARGET-1:0] eip_targets;
+
   logic [N_SOURCE-1:0] ip;
 
   logic [N_TARGET-1:0][PRIOW-1:0]    threshold_q;
@@ -34,11 +36,22 @@ module plic_top #(
   logic [N_SOURCE-1:0][PRIOW-1:0]    prio_q;
   logic [N_TARGET-1:0][N_SOURCE-1:0] ie_q;
 
+  logic [5:0]                        defer_cnt_d, defer_cnt_q;
+  logic                              defer_complete;
+
   always_comb begin
     claim = '0;
     complete = '0;
+    defer_complete = &defer_cnt_q;
+    defer_cnt_d = defer_cnt_q + !defer_complete;
+
     for (int i = 0 ; i < N_TARGET ; i++) begin
-      if (claim_re[i] && claim_id[i] != 0) claim[claim_id[i]-1] = 1'b1;
+      if (claim_re[i] && claim_id[i] != 0)
+        begin
+           claim[claim_id[i]-1] = 1'b1;
+           defer_cnt_d = '0; // defer further interrupts for a while
+        end
+      eip_targets_o[i] = eip_targets[i] & defer_complete; // we don't want to re-interrupt straight after a claim
       if (complete_we[i] && complete_id[i] != 0) complete[complete_id[i]-1] = 1'b1;
     end
   end
@@ -69,7 +82,7 @@ module plic_top #(
       .ie(ie_q[i]),
       .prio(prio_q),
       .threshold(threshold_q[i]),
-      .irq(eip_targets_o[i]),
+      .irq(eip_targets[i]),
       .irq_id(claim_id[i])
     );
   end
@@ -78,7 +91,7 @@ module plic_top #(
   logic [N_TARGET-1:0][PRIOW-1:0] threshold_o;
 
   logic [N_SOURCE:0][PRIOW-1:0] prio_i, prio_o;
-  logic [N_SOURCE:0] prio_we_o;
+  logic [N_SOURCE:0] prio_we_o, prio_re_o;
 
   // TODO(zarubaf): This needs more graceful handling
   // it will break if the number of sources is larger than 32
@@ -89,7 +102,7 @@ module plic_top #(
     .prio_i(prio_i),
     .prio_o(prio_o),
     .prio_we_o(prio_we_o),
-    .prio_re_o(), // don't care
+    .prio_re_o(prio_re_o), // do care ?
     // source zero is always zero
     .ip_i({ip, 1'b0}),
     .ip_re_o(), // don't care
@@ -135,7 +148,11 @@ xlnx_ila_plic plic_ila (
 	.probe18(prio_q),
 	.probe19(ie_q),
         .probe20(irq_sources_i),
-        .probe21(eip_targets_o)
+        .probe21(eip_targets),
+        .probe22(eip_targets_o),
+        .probe23(defer_cnt_d),
+        .probe24(defer_cnt_q),
+        .probe25(defer_complete)
 );
 `endif
    
@@ -155,7 +172,9 @@ xlnx_ila_plic plic_ila (
       prio_q <= '0;
       ie_q <= '0;
       threshold_q <= '0;
+      defer_cnt_q <= '0;
     end else begin
+      defer_cnt_q <= defer_cnt_d;
       // source zero is 0
       for (int i = 0; i < N_SOURCE; i++) begin
         prio_q[i] <= prio_we_o[i + 1] ? prio_o[i + 1] : prio_q[i];
