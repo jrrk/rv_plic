@@ -6,6 +6,10 @@ module plic_top #(
 ) (
   input  logic clk_i,    // Clock
   input  logic rst_ni,  // Asynchronous reset active low
+`ifdef XLNX_ILA_PLIC   
+  output wire trig_out, // ILA debugging triggers
+  input wire trig_out_ack,
+`endif
   // Bus Interface
   input  reg_intf::reg_intf_req_a32_d32 req_i,
   output reg_intf::reg_intf_resp_d32    resp_o,
@@ -13,9 +17,7 @@ module plic_top #(
   // Interrupt Sources
   input  logic [N_SOURCE-1:0] irq_sources_i,
   // Interrupt notification to targets
-  output logic [N_TARGET-1:0] eip_targets_o,
-  output wire trig_out,
-  input wire trig_out_ack
+  output logic [N_TARGET-1:0] eip_targets_o
 );
   localparam PRIOW = $clog2(MAX_PRIO+1);
 
@@ -91,7 +93,7 @@ module plic_top #(
   logic [N_TARGET-1:0][PRIOW-1:0] threshold_o;
 
   logic [N_SOURCE:0][PRIOW-1:0] prio_i, prio_o;
-  logic [N_SOURCE:0] prio_we_o, prio_re_o;
+  logic [N_SOURCE:0] prio_we_o;
 
   // TODO(zarubaf): This needs more graceful handling
   // it will break if the number of sources is larger than 32
@@ -102,7 +104,7 @@ module plic_top #(
     .prio_i(prio_i),
     .prio_o(prio_o),
     .prio_we_o(prio_we_o),
-    .prio_re_o(prio_re_o), // do care ?
+    .prio_re_o(), // don't care
     // source zero is always zero
     .ip_i({ip, 1'b0}),
     .ip_re_o(), // don't care
@@ -121,6 +123,37 @@ module plic_top #(
     .req_i,
     .resp_o
   );
+
+  assign prio_i[0] = '0;
+
+  for (genvar i = 0; i < N_TARGET; i++) begin
+    assign ie_i[i] = {ie_q[i][N_SOURCE-1:0], 1'b0};
+  end
+
+  for (genvar i = 1; i < N_SOURCE + 1; i++) begin
+    assign prio_i[i] = prio_q[i - 1];
+  end
+
+  // registers
+  always_ff @(posedge clk_i or negedge rst_ni) begin
+    if (~rst_ni) begin
+      prio_q <= '0;
+      ie_q <= '0;
+      threshold_q <= '0;
+      defer_cnt_q <= '0;
+    end else begin
+      defer_cnt_q <= defer_cnt_d;
+      // source zero is 0
+      for (int i = 0; i < N_SOURCE; i++) begin
+        prio_q[i] <= prio_we_o[i + 1] ? prio_o[i + 1] : prio_q[i];
+      end
+      for (int i = 0; i < N_TARGET; i++) begin
+        threshold_q[i] <= threshold_we_o[i] ? threshold_o[i] : threshold_q[i];
+        ie_q[i] <= ie_we_o[i] ? ie_o[i][N_SOURCE:1] : ie_q[i];
+      end
+
+    end
+  end
 
 `ifdef XLNX_ILA_PLIC   
 xlnx_ila_plic plic_ila (
@@ -156,34 +189,4 @@ xlnx_ila_plic plic_ila (
 );
 `endif
    
-  assign prio_i[0] = '0;
-
-  for (genvar i = 0; i < N_TARGET; i++) begin
-    assign ie_i[i] = {ie_q[i][N_SOURCE-1:0], 1'b0};
-  end
-
-  for (genvar i = 1; i < N_SOURCE + 1; i++) begin
-    assign prio_i[i] = prio_q[i - 1];
-  end
-
-  // registers
-  always_ff @(posedge clk_i or negedge rst_ni) begin
-    if (~rst_ni) begin
-      prio_q <= '0;
-      ie_q <= '0;
-      threshold_q <= '0;
-      defer_cnt_q <= '0;
-    end else begin
-      defer_cnt_q <= defer_cnt_d;
-      // source zero is 0
-      for (int i = 0; i < N_SOURCE; i++) begin
-        prio_q[i] <= prio_we_o[i + 1] ? prio_o[i + 1] : prio_q[i];
-      end
-      for (int i = 0; i < N_TARGET; i++) begin
-        threshold_q[i] <= threshold_we_o[i] ? threshold_o[i] : threshold_q[i];
-        ie_q[i] <= ie_we_o[i] ? ie_o[i][N_SOURCE:1] : ie_q[i];
-      end
-
-    end
-  end
 endmodule
