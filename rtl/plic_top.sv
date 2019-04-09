@@ -22,14 +22,12 @@ module plic_top #(
 );
   localparam PRIOW = $clog2(MAX_PRIO+1);
 
-  logic [N_TARGET-1:0] eip_targets;
-
   logic [N_SOURCE-1:0] ip;
 
   logic [N_TARGET-1:0][PRIOW-1:0]    threshold_q;
 
   logic [N_TARGET-1:0]               claim_re, claim_re_d, claim_re_q; //Target read indicator
-  logic [N_TARGET-1:0][SRCW-1:0]     claim_id, claim_id_d, claim_id_q;
+  logic [N_TARGET-1:0][SRCW-1:0]     claim_id;
   logic [N_SOURCE-1:0]               claim; //Converted from claim_re/claim_id
 
   logic [N_TARGET-1:0]               complete_we; //Target write indicator
@@ -39,32 +37,30 @@ module plic_top #(
   logic [N_SOURCE-1:0][PRIOW-1:0]    prio_q;
   logic [N_TARGET-1:0][N_SOURCE-1:0] ie_q;
 
-  logic [5:0]                        defer_cnt_d, defer_cnt_q;
-  logic                              defer_complete;
+  logic [N_TARGET-1:0][4:0]          defer_cnt_d, defer_cnt_q;
+  logic [N_TARGET-1:0]               defer_complete;
 
   always_comb begin
      claim = '0;
-     defer_complete = &defer_cnt_q;
-     if (defer_complete) // if we don't see the fence, flush the claim after a while ...
-       claim_re_d = '0;
-     else
-       claim_re_d = claim_re_q;
-     claim_id_d = claim_id_q;
      complete = '0;
-     defer_cnt_d = defer_cnt_q + !defer_complete;
      
      for (int i = 0 ; i < N_TARGET ; i++) begin
+        defer_complete[i] = &(defer_cnt_q[i]);
+        defer_cnt_d[i] = defer_cnt_q[i] + !(defer_complete[i]);
+        if (defer_complete[i]) // if we don't see the fence, flush the claim after a while ...
+          claim_re_d[i] = '0;
+        else
+          claim_re_d[i] = claim_re_q[i];
         if (claim_re[i] && claim_id[i] != 0)
           begin
              claim_re_d[i] = 1'b1;
-             claim_id_d[i] = claim_id[i];
-             defer_cnt_d = '0; // defer further interrupts for a while
+             defer_cnt_d[i] = '0; // defer further interrupts for a while
           end
-        if (claim_re_q[i] && valid_fence_i_r_i)
+        if (claim_re_q[i] && valid_fence_i_r_i) // CPU accepted the claim, process it
           begin
              claim[claim_id[i]-1] = 1'b1;
+             claim_re_d[i] = '0;
           end
-        eip_targets_o[i] = eip_targets[i] & defer_complete; // we don't want to re-interrupt straight after a claim
         if (complete_we[i] && complete_id[i] != 0) complete[complete_id[i]-1] = 1'b1;
      end
   end
@@ -95,7 +91,7 @@ module plic_top #(
       .ie(ie_q[i]),
       .prio(prio_q),
       .threshold(threshold_q[i]),
-      .irq(eip_targets[i]),
+      .irq(eip_targets_o[i]),
       .irq_id(claim_id[i])
     );
   end
@@ -153,11 +149,9 @@ module plic_top #(
       threshold_q <= '0;
       defer_cnt_q <= '0;
       claim_re_q <= '0;
-      claim_id_q <= '0;
     end else begin
       defer_cnt_q <= defer_cnt_d;
       claim_re_q <= claim_re_d;
-      claim_id_q <= claim_id_d;
       // source zero is 0
       for (int i = 0; i < N_SOURCE; i++) begin
         prio_q[i] <= prio_we_o[i + 1] ? prio_o[i + 1] : prio_q[i];
@@ -196,16 +190,13 @@ xlnx_ila_plic plic_ila (
 	.probe18(prio_q),
 	.probe19(ie_q),
         .probe20(irq_sources_i),
-        .probe21(eip_targets),
-        .probe22(eip_targets_o),
-        .probe23(defer_cnt_d),
-        .probe24(defer_cnt_q),
-        .probe25(defer_complete),
-        .probe26(valid_fence_i_r_i),
-        .probe27(claim_re_d),
-        .probe28(claim_re_q),
-        .probe29(claim_id_d),
-        .probe30(claim_id_q)
+        .probe21(eip_targets_o),
+        .probe22(defer_cnt_d),
+        .probe23(defer_cnt_q),
+        .probe24(defer_complete),
+        .probe25(valid_fence_i_r_i),
+        .probe26(claim_re_d),
+        .probe27(claim_re_q)
 );
 `endif
    
