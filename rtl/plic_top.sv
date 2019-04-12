@@ -23,13 +23,15 @@ module plic_top #(
   localparam PRIOW = $clog2(MAX_PRIO+1);
 
   logic [N_SOURCE-1:0] ip;
+  logic [N_SOURCE-1:0] ia;
 
   logic [N_TARGET-1:0][PRIOW-1:0]    threshold_q;
 
   logic [N_TARGET-1:0]               claim_re, claim_re_d, claim_re_q; //Target read indicator
   logic [N_TARGET-1:0][SRCW-1:0]     claim_id;
   logic [N_SOURCE-1:0]               claim; //Converted from claim_re/claim_id
-
+  logic [N_SOURCE-1:0][25:0]         claim_timeout_d, claim_timeout_q;
+   
   logic [N_TARGET-1:0]               complete_we; //Target write indicator
   logic [N_TARGET-1:0][SRCW-1:0]     complete_id;
   logic [N_SOURCE-1:0]               complete; //Converted from complete_re/complete_id
@@ -43,7 +45,20 @@ module plic_top #(
   always_comb begin
      claim = '0;
      complete = '0;
-     
+     for (int i = 0 ; i < N_SOURCE ; i++) begin
+        if (claim_timeout_q[i])
+          begin
+             if (claim_timeout_q[i] == 1)
+               begin
+                  complete[i] = 1'b1;
+                  claim_timeout_d[i] = 0;
+               end
+             else
+               claim_timeout_d[i] = claim_timeout_q[i] - 1;
+          end
+        else 
+          claim_timeout_d[i] = 0;
+        end
      for (int i = 0 ; i < N_TARGET ; i++) begin
         defer_complete[i] = &(defer_cnt_q[i]);
         defer_cnt_d[i] = defer_cnt_q[i] + !(defer_complete[i]);
@@ -59,9 +74,14 @@ module plic_top #(
         if (claim_re_q[i] && valid_fence_i_r_i) // CPU accepted the claim, process it
           begin
              claim[claim_id[i]-1] = 1'b1;
+             claim_timeout_d[claim_id[i]-1] = 50000000;
              claim_re_d[i] = '0;
           end
-        if (complete_we[i] && complete_id[i] != 0) complete[complete_id[i]-1] = 1'b1;
+        if (complete_we[i] && complete_id[i] != 0)
+          begin
+             complete[complete_id[i]-1] = 1'b1;
+             claim_timeout_d[complete_id[i]-1] = 0;
+          end
      end
   end
 
@@ -75,7 +95,8 @@ module plic_top #(
     .le(le_i),
     .claim(claim),
     .complete(complete),
-    .ip(ip)
+    .ip(ip),
+    .ia(ia)
   );
 
   // Target interrupt notification
@@ -149,11 +170,13 @@ module plic_top #(
       threshold_q <= '0;
       defer_cnt_q <= '0;
       claim_re_q <= '0;
+      claim_timeout_q <= '0;
     end else begin
       defer_cnt_q <= defer_cnt_d;
       claim_re_q <= claim_re_d;
       // source zero is 0
       for (int i = 0; i < N_SOURCE; i++) begin
+        claim_timeout_q[i] <= claim_timeout_d[i];
         prio_q[i] <= prio_we_o[i + 1] ? prio_o[i + 1] : prio_q[i];
       end
       for (int i = 0; i < N_TARGET; i++) begin
@@ -169,10 +192,10 @@ xlnx_ila_plic plic_ila (
 	.clk(clk_i),
         .trig_out(trig_out),// output wire trig_out 
         .trig_out_ack(trig_out_ack),// input wire trig_out_ack 
-	.probe0(prio_i),
-	.probe1(prio_o),
-	.probe2(prio_we_o),
-	.probe3(ip),
+	.probe0(prio_i[3:0]),
+	.probe1(prio_o[3:0]),
+	.probe2(prio_we_o[3:0]),
+	.probe3(ip[3:0]),
 	.probe4(ie_i),
 	.probe5(ie_o),
 	.probe6(ie_we_o),
@@ -185,18 +208,21 @@ xlnx_ila_plic plic_ila (
 	.probe13(claim_re),
 	.probe14(req_i),
 	.probe15(resp_o),
-	.probe16(claim),
-	.probe17(complete),
-	.probe18(prio_q),
+	.probe16(claim[3:0]),
+	.probe17(complete[3:0]),
+	.probe18(prio_q[3:0]),
 	.probe19(ie_q),
-        .probe20(irq_sources_i),
+        .probe20(irq_sources_i[3:0]),
         .probe21(eip_targets_o),
         .probe22(defer_cnt_d),
         .probe23(defer_cnt_q),
         .probe24(defer_complete),
         .probe25(valid_fence_i_r_i),
         .probe26(claim_re_d),
-        .probe27(claim_re_q)
+        .probe27(claim_re_q),
+	.probe28(ia[3:0]),
+        .probe29(claim_timeout_d[3:0]),
+        .probe30(claim_timeout_q[3:0])
 );
 `endif
    

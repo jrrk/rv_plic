@@ -16,10 +16,9 @@ module rv_plic_gateway #(
   input  logic [N_SOURCE-1:0] claim, // $onehot0(claim)
   input  logic [N_SOURCE-1:0] complete, // $onehot0(complete)
 
-  output logic [N_SOURCE-1:0] ip
+  output logic [N_SOURCE-1:0] ip,
+  output logic [N_SOURCE-1:0] ia
 );
-
-logic [N_SOURCE-1:0] ia;    // Interrupt Active
 
 logic [N_SOURCE-1:0] set;   // Set: (le) ? src & ~src_d : src ;
 logic [N_SOURCE-1:0] src_d;
