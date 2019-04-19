@@ -17,7 +17,7 @@ module plic_top #(
 );
   localparam PRIOW = $clog2(MAX_PRIO+1);
 
-  logic [N_SOURCE-1:0] ip;
+  logic [N_SOURCE-1:0] ip, ia;
 
   logic [N_TARGET-1:0][PRIOW-1:0]    threshold_q;
 
@@ -52,7 +52,8 @@ module plic_top #(
     .le(le_i),
     .claim(claim),
     .complete(complete),
-    .ip(ip)
+    .ip(ip),
+    .ia(ia)
   );
 
   // Target interrupt notification
@@ -162,12 +163,7 @@ xlnx_ila_plic plic_ila (
 	.probe19(ie_q),
         .probe20(irq_sources_i),
         .probe21(eip_targets_o),
-        .probe22(1'b0),
-        .probe23(1'b0),
-        .probe24(1'b0),
-        .probe25(1'b0),
-        .probe26(1'b0),
-        .probe27(1'b0)
+        .probe22(ia)
 );
 `endif
    
