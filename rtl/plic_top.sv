@@ -17,7 +17,7 @@ module plic_top #(
 );
   localparam PRIOW = $clog2(MAX_PRIO+1);
 
-  logic [N_SOURCE-1:0] ip, ia;
+  logic [N_SOURCE-1:0] ip;
 
   logic [N_TARGET-1:0][PRIOW-1:0]    threshold_q;
 
@@ -31,7 +31,6 @@ module plic_top #(
 
   logic [N_SOURCE-1:0][PRIOW-1:0]    prio_q;
   logic [N_TARGET-1:0][N_SOURCE-1:0] ie_q;
-
 
   always_comb begin
     claim = '0;
@@ -52,8 +51,7 @@ module plic_top #(
     .le(le_i),
     .claim(claim),
     .complete(complete),
-    .ip(ip),
-    .ia(ia)
+    .ip(ip)
   );
 
   // Target interrupt notification
@@ -137,34 +135,4 @@ module plic_top #(
 
     end
   end
-
-`ifdef XLNX_ILA_PLIC   
-xlnx_ila_plic plic_ila (
-	.clk(clk_i),
-	.probe0(prio_i),
-	.probe1(prio_o),
-	.probe2(prio_we_o),
-	.probe3(ip),
-	.probe4(ie_i),
-	.probe5(ie_o),
-	.probe6(ie_we_o),
-	.probe7(threshold_q),
-	.probe8(threshold_o),
-	.probe9(threshold_we_o),
-	.probe10(claim_id),
-	.probe11(complete_id),
-	.probe12(complete_we),
-	.probe13(claim_re),
-	.probe14(req_i),
-	.probe15(resp_o),
-	.probe16(claim),
-	.probe17(complete),
-	.probe18(prio_q),
-	.probe19(ie_q),
-        .probe20(irq_sources_i),
-        .probe21(eip_targets_o),
-        .probe22(ia)
-);
-`endif
-   
 endmodule
